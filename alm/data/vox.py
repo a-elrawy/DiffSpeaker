@@ -1,5 +1,5 @@
 from .base import BASEDataModule
-from alm.data.vox import VoxDataset
+from alm.data.voxc import VoxDataset
 from transformers import Wav2Vec2Processor
 from collections import defaultdict
 
@@ -12,6 +12,7 @@ import numpy as np
 from multiprocessing import Pool
 
 from FLAME.FLAME import FLAME
+import torch
 
 
 flame = FLAME()
@@ -19,30 +20,48 @@ flame = FLAME()
 
 def convert_to_vertices(flame_params):
     # Rename keys to dict_keys(['pose_params', 'cam', 'shape_params', 'expression_params', 'eyelid_params', 'jaw_params'])
-    flame_params['pose_params'] = flame_params['pose']
-    flame_params['jaw_params'] = flame_params['jaw']
-    flame_params['expression_params'] = flame_params['expression']
-    flame_params['eyelid_params'] = flame_params['eyelid']
-    flame_params['shape_params'] =  np.zeros((1, 300)) #flame_params['shape']
-    del flame_params['expression']
-    del flame_params['eyelid']
-    del flame_params['pose']
-    del flame_params['jaw']
-    del flame_params['shape']
+    new_flame_params = {}
+    new_flame_params['pose_params'] = torch.tensor(flame_params['pose'], dtype=torch.float32)
+    new_flame_params['jaw_params'] =  torch.tensor(flame_params['jaw'], dtype=torch.float32)
+    new_flame_params['expression_params'] = torch.tensor(flame_params['expression'], dtype=torch.float32)
+    new_flame_params['eyelid_params'] = torch.tensor(flame_params['eyelid'], dtype=torch.float32)
+    new_flame_params['cam'] = torch.tensor(flame_params['cam'], dtype=torch.float32)
+    new_flame_params['shape_params'] =  torch.zeros((flame_params['shape'].shape[0], 300), dtype=torch.float32)  #flame_params['shape']
 
+    return flame.forward(new_flame_params)['vertices']
 
-    return flame.forward(flame_params)['vertices']
+# Map Vox to Vocaset
+vox_vocaset_mapping = {
+            'id10715': 'FaceTalk_170728_03272_TA',
+            'id11181': 'FaceTalk_170904_00128_TA',
+            'id11211': 'FaceTalk_170725_00137_TA',
+            'id10231': 'FaceTalk_170915_00223_TA',
+            'id10756': 'FaceTalk_170811_03274_TA',
+            'id10931': 'FaceTalk_170913_03279_TA',
+            'id10104': 'FaceTalk_170904_03276_TA',
+            'id10786': 'FaceTalk_170912_03278_TA',
+            'id10720': 'FaceTalk_170811_03275_TA',
+            'id11182': 'FaceTalk_170809_00138_TA',
+
+}
 
 def load_data(args):
     file, root_dir, processor, templates, audio_dir, flame_dir = args
     if file.endswith('wav'):
         wav_path = os.path.join(root_dir, audio_dir, file)
-        speech_array, sampling_rate = librosa.load(wav_path, sr=16000)
-        input_values = np.squeeze(processor(speech_array,sampling_rate=16000).input_values)
+        # Check if input_values was calculated before
+        if os.path.exists(wav_path.replace("wav", "npy")):
+            input_values = np.load(wav_path.replace("wav", "npy"))
+        else:
+            speech_array, sampling_rate = librosa.load(wav_path, sr=16000)
+            input_values = np.squeeze(processor(speech_array,sampling_rate=16000).input_values)
+            np.save(wav_path.replace("wav", "npy"), input_values)
+
         key = file.replace("wav", "npy")
         result = {}
         result["audio"] = input_values
-        subject_id = "_".join(key.split("_")[:-1])
+        subject_id = key.split("#")[0]
+        subject_id = vox_vocaset_mapping[subject_id]
         temp = templates[subject_id]
         result["name"] = file.replace(".wav", "")
         result["path"] = os.path.abspath(wav_path)
@@ -74,39 +93,30 @@ class VoxDataModule(BASEDataModule):
         self.name = 'Vox'
         self.Dataset = VoxDataset
         self.cfg = cfg
-        
-        # customized to Vox
+
         self.subjects = {
             'train': [
-                'FaceTalk_170728_03272_TA',
-                'FaceTalk_170904_00128_TA',
-                'FaceTalk_170725_00137_TA',
-                'FaceTalk_170915_00223_TA',
-                'FaceTalk_170811_03274_TA',
-                'FaceTalk_170913_03279_TA',
-                'FaceTalk_170904_03276_TA',
-                'FaceTalk_170912_03278_TA'
+                'id10715',
+                'id11181',
+                'id11211',
+                'id10231',
+                'id10756',
+                'id10931',
+                'id10104',
+                'id10786'
             ],
             'val': [
-                'FaceTalk_170811_03275_TA',
-                'FaceTalk_170908_03277_TA'
+                'id10720',
             ],
             'test': [
-                'FaceTalk_170809_00138_TA',
-                'FaceTalk_170731_00024_TA'
+                'id11182',
             ]
-            # 'test': [
-            #     'FaceTalk_170728_03272_TA',
-            #     'FaceTalk_170904_00128_TA',
-            #     'FaceTalk_170725_00137_TA',
-            #     'FaceTalk_170915_00223_TA',
-            #     'FaceTalk_170811_03274_TA',
-            #     'FaceTalk_170913_03279_TA',
-            #     'FaceTalk_170904_03276_TA',
-            #     'FaceTalk_170912_03278_TA'
-            # ]
         }
 
+
+        self.root_dir = kwargs.get('data_root', 'datasets/vox')
+        self.audio_dir = 'audio'
+        self.vertice_dir = 'flame'
         processor = Wav2Vec2Processor.from_pretrained("facebook/wav2vec2-base-960h")
         self.template_file = 'templates.pkl'
 
@@ -114,7 +124,7 @@ class VoxDataModule(BASEDataModule):
 
         # load
         data = defaultdict(dict)
-        with open(os.path.join(self.root_dir, self.template_file), 'rb') as fin:
+        with open(os.path.join('datasets/vocaset', self.template_file), 'rb') as fin:
             templates = pickle.load(fin, encoding='latin1')
 
         count = 0
@@ -137,7 +147,7 @@ class VoxDataModule(BASEDataModule):
 
         motion_list = []
 
-        if True: # multi-process
+        if False: # multi-process
             with Pool(processes=os.cpu_count()) as pool:
                 results = pool.map(load_data, args_list)
                 for result in results:

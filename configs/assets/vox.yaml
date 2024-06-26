@@ -4,6 +4,6 @@ TEST:
   FOLDER: './results' # Testing files saving path
 
 DATASET:
-  VOCASET:
-    ROOT: ./datasets/vox
+  VOX:
+    ROOT: ./voxceleb
 

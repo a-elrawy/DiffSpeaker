@@ -44,6 +44,8 @@ METRIC:
 DATASET:
   VOCASET:
     NONE: none
+  VOX:
+    NONE: none
 
 DEMO:
   EAMPLE: null
