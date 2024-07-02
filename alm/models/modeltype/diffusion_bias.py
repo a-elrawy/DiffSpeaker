@@ -6,7 +6,7 @@ from transformers import Wav2Vec2Model
 
 from alm.config import instantiate_from_config
 from alm.models.modeltype.base import BaseModel
-from alm.models.losses.voca import VOCALosses
+from alm.models.losses.voca import VOCALosses, MaskedConsistency, MaskedVelocityConsistency
 from alm.utils.demo_utils import animate
 from .base import BaseModel
 
@@ -39,7 +39,8 @@ class DIFFUSION_BIAS(BaseModel):
                 split: VOCALosses(cfg=cfg, split=split)
                 for split in ["losses_train", "losses_test", "losses_val",] # "losses_train_val"
             })
-
+        self.reconstruct = MaskedConsistency()
+        self.reconstruct_v = MaskedVelocityConsistency()
         self.losses = {
             key: self._losses["losses_" + key]
             for key in ["train", "test", "val", ] # "train_val"
@@ -114,7 +115,11 @@ class DIFFUSION_BIAS(BaseModel):
                 batch['audio'][audio_mask] = 0
 
             rs_set = self._diffusion_forward(batch, batch_idx, phase="train")
-            loss = self.losses[split].update(rs_set)
+            mask = rs_set['vertice_attention'].unsqueeze(-1)
+            loss1 = self.reconstruct(rs_set['vertice'], rs_set['vertice_pred'], mask)
+            loss2 = self.reconstruct_v(rs_set['vertice'], rs_set['vertice_pred'], mask)
+            loss = loss1 + loss2
+            self.losses[split].update(loss1, loss2, loss)
             return loss
 
 
@@ -133,7 +138,11 @@ class DIFFUSION_BIAS(BaseModel):
                 with torch.no_grad():
                     # same as the training, we use the autoregressive inference
                     rs_set = self._diffusion_forward(batch, batch_idx, phase="val")
-                    loss = self.losses[split].update(rs_set)
+                    mask = rs_set['vertice_attention'].unsqueeze(-1)
+                    loss1 = self.reconstruct(rs_set['vertice'], rs_set['vertice_pred'], mask)
+                    loss2 = self.reconstruct_v(rs_set['vertice'], rs_set['vertice_pred'], mask)
+                    loss = loss1 + loss2
+                    self.losses[split].update(loss1, loss2, loss)
 
                     if loss is None:
                         return ValueError("loss is None")
@@ -215,7 +224,7 @@ class DIFFUSION_BIAS(BaseModel):
                             "Length": torch.tensor(min_len).float(),
                         }
                     else:                                         # VOCASET
-                        exp = 'vocaset'
+                        exp = 'vox'
                         pred = rs_set['vertice_pred'].view(-1, 5023, 3).detach().cpu().numpy()
                         gt = rs_set['vertice'].view(-1, 5023, 3).detach().cpu().numpy()
                         template =  batch['template'].view(-1, 5023, 3).detach().cpu().numpy()

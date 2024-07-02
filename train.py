@@ -195,7 +195,9 @@ def main():
     )
     logger.info("Trainer initialized")
 
-    if cfg.TRAIN.PRETRAINED:
+    if True:
+        cfg.TRAIN.PRETRAINED = '/root/DiffSpeaker/checkpoints/vocaset/diffspeaker_wav2vec2_vocaset.ckpt'
+
         logger.info("Loading pretrain mode from {}".format(
             cfg.TRAIN.PRETRAINED))
         logger.info("Attention! VAE will be recovered")
@@ -206,7 +208,7 @@ def main():
 
         new_state_dict = OrderedDict()
         for k, v in state_dict.items():
-            if k not in ["denoiser.sequence_pos_encoding.pe"]:
+            if k not in ["denoiser.sequence_pos_encoding.pe", "denoiser.PPE.pe"]:
                 new_state_dict[k] = v
         model.load_state_dict(new_state_dict, strict=False)
 

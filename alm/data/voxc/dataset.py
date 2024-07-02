@@ -32,12 +32,12 @@ class VoxDataset(data.Dataset):
         vertice = self.data[index]["vertice"]
         template = self.data[index]["template"]
         if self.data_type == "train":
-            subject = "_".join(file_name.split("_")[:-1])
+            subject = file_name.split("#")[0]
             one_hot = self.one_hot_labels[self.subjects_dict["train"].index(subject)]
         elif self.data_type == "val":
             one_hot = self.one_hot_labels
         elif self.data_type == "test":
-            subject = "_".join(file_name.split("_")[:-1])
+            subject = file_name.split("#")[0]
             if subject in self.subjects_dict["train"]:
                 one_hot = self.one_hot_labels[self.subjects_dict["train"].index(subject)]
             else:

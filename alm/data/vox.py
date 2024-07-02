@@ -14,21 +14,23 @@ from multiprocessing import Pool
 from FLAME.FLAME import FLAME
 import torch
 
-
-flame = FLAME()
+flame_device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+flame = FLAME().to(flame_device)
 
 
 def convert_to_vertices(flame_params):
     # Rename keys to dict_keys(['pose_params', 'cam', 'shape_params', 'expression_params', 'eyelid_params', 'jaw_params'])
     new_flame_params = {}
-    new_flame_params['pose_params'] = torch.tensor(flame_params['pose'], dtype=torch.float32)
-    new_flame_params['jaw_params'] =  torch.tensor(flame_params['jaw'], dtype=torch.float32)
-    new_flame_params['expression_params'] = torch.tensor(flame_params['expression'], dtype=torch.float32)
-    new_flame_params['eyelid_params'] = torch.tensor(flame_params['eyelid'], dtype=torch.float32)
-    new_flame_params['cam'] = torch.tensor(flame_params['cam'], dtype=torch.float32)
-    new_flame_params['shape_params'] =  torch.zeros((flame_params['shape'].shape[0], 300), dtype=torch.float32)  #flame_params['shape']
+    new_flame_params['pose_params']  = torch.zeros((flame_params['pose'].shape[0], 3), dtype=torch.float32).to(flame_device) #flame_params['pose']
+    # new_flame_params['pose_params'] = torch.FloatTensor(flame_params['pose']).to(flame_device)
 
-    return flame.forward(new_flame_params)['vertices']
+    new_flame_params['jaw_params'] =  torch.FloatTensor(flame_params['jaw']).to(flame_device)
+    new_flame_params['expression_params'] = torch.FloatTensor(flame_params['expression']).to(flame_device)
+    new_flame_params['eyelid_params'] = torch.FloatTensor(flame_params['eyelid']).to(flame_device)
+    new_flame_params['cam'] = torch.FloatTensor(flame_params['cam']).to(flame_device)
+    new_flame_params['shape_params'] =  torch.zeros((flame_params['shape'].shape[0], 300), dtype=torch.float32).to(flame_device)  #flame_params['shape']
+
+    return flame.forward(new_flame_params)['vertices'].detach().cpu().numpy().reshape(-1, 15069)
 
 # Map Vox to Vocaset
 vox_vocaset_mapping = {
@@ -50,18 +52,18 @@ def load_data(args):
     if file.endswith('wav'):
         wav_path = os.path.join(root_dir, audio_dir, file)
         # Check if input_values was calculated before
-        if os.path.exists(wav_path.replace("wav", "npy")):
-            input_values = np.load(wav_path.replace("wav", "npy"))
+        wav2vec_path = wav_path.replace("wav", "npy").replace("audio", "wav2vec")
+        if os.path.exists(wav2vec_path):
+            input_values = np.load(wav2vec_path)
         else:
             speech_array, sampling_rate = librosa.load(wav_path, sr=16000)
             input_values = np.squeeze(processor(speech_array,sampling_rate=16000).input_values)
-            np.save(wav_path.replace("wav", "npy"), input_values)
+            np.save(wav2vec_path, input_values)
 
-        key = file.replace("wav", "npy")
+        key = file.split("#")[0]
         result = {}
         result["audio"] = input_values
-        subject_id = key.split("#")[0]
-        subject_id = vox_vocaset_mapping[subject_id]
+        subject_id = vox_vocaset_mapping[key]
         temp = templates[subject_id]
         result["name"] = file.replace(".wav", "")
         result["path"] = os.path.abspath(wav_path)
@@ -161,6 +163,7 @@ class VoxDataModule(BASEDataModule):
                     key, value = result
                     data[key] = value
                 else:
+                    print(args[0])
                     print("Warning: data not found")
 
 

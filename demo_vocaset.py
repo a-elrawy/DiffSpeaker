@@ -1,4 +1,6 @@
 import os
+os.environ['OPENBLAS_NUM_THREADS'] = '1'
+
 import pickle
 import torch
 import torch.nn.functional as F
@@ -111,18 +113,19 @@ def main():
     }
     with torch.no_grad():
         # time test
-        # import time
-        # output_file = "diffspeakers_time.txt"
-        # t1 = time.time()
+        import time
+        output_file = "diffspeakers_time.txt"
+        t1 = time.time()
         test_name = os.path.basename(cfg.DEMO.EXAMPLE).split(".")[0]
         
         prediction = model.predict(data_input)
         # smooth the prediction in vocaset model, it does not significantly affect the metric, but it makes the animation smoother
         vertices = prediction['vertice_pred'].squeeze().cpu().numpy()
 
-        # t2 = time.time()
-        # with open(output_file, 'a') as f:
-        #     f.write(test_name + " " + str(t2-t1) + "\n")
+        t2 = time.time()
+        
+        with open(output_file, 'a') as f:
+            f.write(test_name + " " + str(t2-t1) + "\n")
                 
 
 
